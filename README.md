@@ -38,21 +38,31 @@ versions under a single distribution name, which resolvers handle badly.
 
 ## Status
 
-Spike. Nothing published yet — the build workflow is manual and uploads a
-throwaway artifact while the arm64 build is being proven out.
+Wheels are published to
+[Releases](https://github.com/augustelalande/open3d-wheels/releases). The build
+workflow is manual — dispatch it with a ref and a set of Python versions.
+
+The PEP 503 index on GitHub Pages is not up yet, so installs are by URL for now.
 
 ## Usage
 
-Once wheels are published they will be served from a PEP 503 index on GitHub
-Pages:
+Take the URL of the wheel matching your Python from the
+[latest release](https://github.com/augustelalande/open3d-wheels/releases/latest):
+
+```bash
+pip install https://github.com/augustelalande/open3d-wheels/releases/download/v0.19.0-aab533f/open3d-0.19.0-cp312-cp312-manylinux_2_35_aarch64.whl
+```
+
+Requires **glibc >= 2.35** (JetPack 6 / Ubuntu 22.04; not JetPack 5).
+
+Once the index is up it will be served from GitHub Pages, and the distribution
+keeps its upstream name so nothing else has to change:
 
 ```toml
 [[tool.uv.index]]
 name = "open3d-wheels"
 url = "https://augustelalande.github.io/open3d-wheels/simple/"
 ```
-
-The distribution keeps its upstream name, `open3d`, so nothing else changes.
 
 ## Build environment
 
