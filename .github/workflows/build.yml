@@ -1,23 +1,41 @@
-name: Build wheel
+name: Build wheels
 
-# Spike: prove one arm64 wheel can be built before adding a matrix, releases or
-# an index. Manual only, and the artifact is deliberately throwaway.
+# Manual only, and the artifacts are still throwaway — publishing to a release
+# and an index comes once these are proven.
 on:
   workflow_dispatch:
     inputs:
       open3d_ref:
-        description: Open3D tag or commit to build
-        default: v0.19.0
-      target:
-        description: docker_build.sh target
-        default: openblas-arm64-py312
+        description: Open3D ref — a branch, a tag, or a full 40-char commit SHA
+        default: aab533f300c5de61367478e500e078b1b93068b2
+      pythons:
+        description: JSON array of docker_build.sh python tags
+        default: '["py310","py311","py312","py313","py314"]'
 
 jobs:
   build:
+    # Every wheel comes from one ref. Mixing a release tag with main would put
+    # two different Open3D versions under one distribution name in the index.
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON(inputs.pythons) }}
+
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 350
 
     steps:
+      - name: Validate the ref
+        # actions/checkout only recognises a full 40-char SHA as a commit;
+        # anything shorter it treats as a branch name and fails on the fetch
+        # rather than saying so.
+        run: |
+          ref='${{ inputs.open3d_ref }}'
+          if printf '%s' "$ref" | grep -qE '^[0-9a-f]{7,39}$'; then
+            echo "::error::'$ref' looks like an abbreviated SHA; actions/checkout needs all 40 characters"
+            exit 1
+          fi
+
       - name: Check out Open3D
         uses: actions/checkout@v4
         with:
@@ -49,7 +67,7 @@ jobs:
       - name: Build
         run: |
           cd docker
-          ./docker_build.sh "${{ inputs.target }}"
+          ./docker_build.sh "openblas-arm64-${{ matrix.python }}"
 
       - name: Inspect the wheel
         # A `linux_aarch64` tag is refused by pip at install time, so the build
@@ -75,6 +93,6 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ inputs.target }}
+          name: wheel-${{ matrix.python }}
           path: docker/*.whl
           if-no-files-found: error
