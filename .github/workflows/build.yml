@@ -26,13 +26,19 @@ jobs:
           submodules: recursive
 
       - name: Accept the Anaconda channel ToS
-        # Upstream pins the Open3D tag but not the Miniconda installer — the
-        # Dockerfile fetches `Miniconda3-latest`, which now bundles the ToS
-        # plugin and refuses to create an env from the default channels
-        # non-interactively. So every Open3D docker build fails today, on every
-        # arch, at `conda create`. Nothing about the build itself changes.
+        # Only the release tags need this: upstream replaced Miniconda with
+        # pyenv in Dockerfile.openblas after v0.19.0. Where conda is still used,
+        # the Open3D source is pinned but the installer is not — the Dockerfile
+        # fetches `Miniconda3-latest`, which now bundles the ToS plugin and
+        # refuses to create an env from the default channels non-interactively.
+        # That fails `conda create` on every arch. Nothing else about the build
+        # changes.
         run: |
           f=docker/Dockerfile.openblas
+          if ! grep -q '^RUN conda create -y -n open3d' "$f"; then
+            echo "$f does not use conda (pyenv build) — nothing to patch"
+            exit 0
+          fi
           sed -i 's|^RUN conda create -y -n open3d|ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes\nRUN conda create -y -n open3d|' "$f"
           # A silently unapplied patch would resurface as the same opaque conda
           # error 40 minutes into the build. Fail here instead.

@@ -44,11 +44,11 @@ The distribution keeps its upstream name, `open3d`, so nothing else changes.
 
 ## Build environment
 
-Upstream pins the Open3D source but not its toolchain: `Dockerfile.openblas`
-fetches `Miniconda3-latest`, and current Miniconda refuses to create an
-environment from Anaconda's default channels until their Terms of Service are
-accepted. That makes every Open3D docker build fail at `conda create`, on every
-architecture, regardless of tag. The workflow inserts one line —
+Building a **release tag** needs one fix. Upstream pins the Open3D source but
+not its toolchain: `Dockerfile.openblas` fetches `Miniconda3-latest`, and
+current Miniconda refuses to create an environment from Anaconda's default
+channels until their Terms of Service are accepted. That makes those builds fail
+at `conda create`, on every architecture. The workflow inserts one line —
 
 ```dockerfile
 ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
@@ -56,6 +56,9 @@ ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
 
 — ahead of that step. It accepts the channel ToS non-interactively and changes
 nothing else about the build.
+
+Building from **`main`** needs no fix: upstream replaced Miniconda with pyenv
+after v0.19.0, and the workflow skips the patch when there is no conda to patch.
 
 ## Provenance
 
