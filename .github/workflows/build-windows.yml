@@ -1,0 +1,126 @@
+name: Build Windows wheels
+
+# Windows has no docker_build.sh equivalent, so this reproduces the essentials
+# of upstream's windows.yml. Upstream splits the C++ core (build-lib) from the
+# pybind module (build-wheel) so the core is compiled once and reused across
+# many Pythons; for the two versions PyPI is missing, that indirection costs
+# more than it saves, so each job here builds the whole tree.
+#
+# Only 3.13 and 3.14 are built. PyPI already ships official win_amd64 wheels
+# for 3.8-3.12, and publishing our own under the same name and version would
+# shadow them.
+on:
+  workflow_dispatch:
+    inputs:
+      open3d_ref:
+        description: Open3D ref — a branch, a tag, or a full 40-char commit SHA
+        default: aab533f300c5de61367478e500e078b1b93068b2
+      pythons:
+        description: JSON array of Python versions
+        default: '["3.13","3.14"]'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON(inputs.pythons) }}
+
+    runs-on: windows-2022
+    timeout-minutes: 350
+
+    env:
+      # The default workspace lives on D:, which is small and produces paths
+      # long enough to break the build. Upstream moves the build to C: for the
+      # same reason (actions/virtual-environments#1341).
+      BUILD_DIR: C:\o3d-build
+
+    steps:
+      - name: Validate the ref
+        # actions/checkout only recognises a full 40-char SHA as a commit;
+        # anything shorter it treats as a branch name and fails on the fetch
+        # rather than saying so.
+        shell: bash
+        run: |
+          ref='${{ inputs.open3d_ref }}'
+          if printf '%s' "$ref" | grep -qE '^[0-9a-f]{7,39}$'; then
+            echo "::error::'$ref' looks like an abbreviated SHA; actions/checkout needs all 40 characters"
+            exit 1
+          fi
+
+      - name: Check out Open3D
+        uses: actions/checkout@v4
+        with:
+          repository: isl-org/Open3D
+          ref: ${{ inputs.open3d_ref }}
+          submodules: recursive
+          path: open3d
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Python build dependencies
+        working-directory: open3d
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -U pip
+          # requirements_jupyter_build.txt is deliberately not installed: the
+          # Jupyter extension is off below, and its toolchain (maturin, npm)
+          # is the most fragile part of upstream's Windows build.
+          python -m pip install -U -r python/requirements.txt -r python/requirements_build.txt
+
+      - name: Configure
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -Path '${{ env.BUILD_DIR }}' -ItemType Directory -Force | Out-Null
+          cd '${{ env.BUILD_DIR }}'
+          cmake --version
+          # CPU-only, matching the OpenBLAS Linux targets: no CUDA, no SYCL, no
+          # ML ops. The sensor SDKs, WebRTC and the Jupyter extension are off
+          # too -- they pull in the heaviest and least reliable dependencies,
+          # and none of them are why these wheels exist.
+          # STATIC_WINDOWS_RUNTIME=OFF (/MD) is what CPython extensions need.
+          cmake -G "Visual Studio 17 2022" -A x64 `
+            -DDEVELOPER_BUILD=OFF `
+            -DBUILD_SHARED_LIBS=ON `
+            -DSTATIC_WINDOWS_RUNTIME=OFF `
+            -DBUILD_PYTHON_MODULE=ON `
+            -DBUILD_GUI=ON `
+            -DBUILD_CUDA_MODULE=OFF `
+            -DBUILD_SYCL_MODULE=OFF `
+            -DBUILD_PYTORCH_OPS=OFF `
+            -DBUILD_TENSORFLOW_OPS=OFF `
+            -DBUILD_AZURE_KINECT=OFF `
+            -DBUILD_LIBREALSENSE=OFF `
+            -DBUILD_WEBRTC=OFF `
+            -DBUILD_JUPYTER_EXTENSION=OFF `
+            -DBUILD_UNIT_TESTS=OFF `
+            -DBUILD_EXAMPLES=OFF `
+            -DOPEN3D_THIRD_PARTY_DOWNLOAD_DIR="${{ env.BUILD_DIR }}\3rdparty_downloads" `
+            -DPython3_EXECUTABLE="$((Get-Command python).Source)" `
+            "${{ github.workspace }}\open3d"
+
+      - name: Build the wheel
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build . --parallel $env:NUMBER_OF_PROCESSORS --config Release --target pip-package
+
+      - name: Inspect the wheel
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wheels = Get-ChildItem lib\python_package\pip_package\open3d*.whl
+          if (-not $wheels) { throw "no wheel was produced" }
+          foreach ($w in $wheels) {
+            Write-Host "=== $($w.Name)  $([math]::Round($w.Length/1MB,1)) MB"
+            python -c "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print(z.read([n for n in z.namelist() if n.endswith('/WHEEL')][0]).decode())" $w.FullName
+          }
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-win_amd64-py${{ matrix.python }}
+          path: ${{ env.BUILD_DIR }}\lib\python_package\pip_package\open3d*.whl
+          if-no-files-found: error
