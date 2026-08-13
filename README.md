@@ -12,7 +12,8 @@ Linux **arm64** is the gap — there are no wheels for it on either index, so
 `pip install open3d` on a Jetson or other arm64 Linux board finds nothing.
 
 These are the stock `docker/docker_build.sh openblas-arm64-pyXXX` targets, run on
-GitHub's arm64 runners. No source patches.
+GitHub's arm64 runners. No patches to Open3D itself — see
+[Build environment](#build-environment) for the one line the workflow does change.
 
 ## What these are not
 
@@ -41,7 +42,23 @@ url = "https://augustelalande.github.io/open3d-wheels/simple/"
 
 The distribution keeps its upstream name, `open3d`, so nothing else changes.
 
+## Build environment
+
+Upstream pins the Open3D source but not its toolchain: `Dockerfile.openblas`
+fetches `Miniconda3-latest`, and current Miniconda refuses to create an
+environment from Anaconda's default channels until their Terms of Service are
+accepted. That makes every Open3D docker build fail at `conda create`, on every
+architecture, regardless of tag. The workflow inserts one line —
+
+```dockerfile
+ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
+```
+
+— ahead of that step. It accepts the channel ToS non-interactively and changes
+nothing else about the build.
+
 ## Provenance
 
 Each release records the upstream tag it was built from. The build is
-`docker/docker_build.sh` from that tag, unmodified, on `ubuntu-24.04-arm`.
+`docker/docker_build.sh` from that tag, on `ubuntu-24.04-arm`, with only the
+Dockerfile line above added.
