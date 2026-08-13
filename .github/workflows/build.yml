@@ -70,9 +70,16 @@ jobs:
           ./docker_build.sh "openblas-arm64-${{ matrix.python }}"
 
       - name: Inspect the wheel
-        # A `linux_aarch64` tag is refused by pip at install time, so the build
-        # is only useful if it produced a `manylinux_*` tag. Check before
-        # celebrating a green run.
+        # Upstream runs no auditwheel, so expect a bare `linux_aarch64` tag.
+        # That is fine when self-hosting: `linux_<arch>` is the last entry pip
+        # yields in its own supported-tag list, so it installs. PyPI refuses to
+        # *host* such wheels; pip does not refuse to install them.
+        #
+        # glibc is the real portability limit. The base image is
+        # arm64v8/ubuntu:22.04, so these need glibc >= 2.35 — fine on JetPack 6
+        # (Ubuntu 22.04), too new for JetPack 5 (Ubuntu 20.04, glibc 2.31).
+        # Report the floor the binaries actually ask for rather than inferring
+        # it from the base image.
         run: |
           shopt -s nullglob
           wheels=(docker/*.whl)
@@ -84,10 +91,13 @@ jobs:
             echo "=== $w"
             ls -lh "$w"
             unzip -p "$w" '*/WHEEL'
-            case "$(basename "$w")" in
-              *manylinux*aarch64*) echo "tag OK" ;;
-              *) echo "::warning::not a manylinux aarch64 wheel — needs auditwheel repair" ;;
-            esac
+            tmp=$(mktemp -d)
+            unzip -q -o "$w" -d "$tmp"
+            echo "--- highest glibc symbol versions required:"
+            find "$tmp" -name '*.so*' -exec sh -c \
+              'objdump -T "$1" 2>/dev/null | grep -oE "GLIBC_[0-9.]+"' _ {} \; \
+              | sort -uV | tail -3
+            rm -rf "$tmp"
           done
 
       - name: Upload
