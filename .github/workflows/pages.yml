@@ -1,0 +1,46 @@
+name: Publish index
+
+# The index is derived entirely from release assets, so it is rebuilt when
+# releases change rather than when the repository does.
+on:
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Queue deploys rather than cancelling them: a release publish and a manual
+# dispatch arriving together should both end up reflected, not one dropped.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/generate_index.py --repo "${{ github.repository }}" --out site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
