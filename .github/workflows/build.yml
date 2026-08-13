@@ -1,0 +1,70 @@
+name: Build wheel
+
+# Spike: prove one arm64 wheel can be built before adding a matrix, releases or
+# an index. Manual only, and the artifact is deliberately throwaway.
+on:
+  workflow_dispatch:
+    inputs:
+      open3d_ref:
+        description: Open3D tag or commit to build
+        default: v0.19.0
+      target:
+        description: docker_build.sh target
+        default: openblas-arm64-py312
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 350
+
+    steps:
+      - name: Free disk space
+        # The runner ships with ~14 GB free; the Open3D build plus its Docker
+        # images does not fit. These are the large preinstalled toolchains we
+        # do not use. Without this the build fails late and unhelpfully.
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /usr/local/.ghcup
+          sudo docker image prune --all --force
+          df -h /
+
+      - name: Check out Open3D
+        uses: actions/checkout@v4
+        with:
+          repository: isl-org/Open3D
+          ref: ${{ inputs.open3d_ref }}
+          submodules: recursive
+
+      - name: Build
+        run: |
+          cd docker
+          ./docker_build.sh "${{ inputs.target }}"
+
+      - name: Inspect the wheel
+        # A `linux_aarch64` tag is refused by pip at install time, so the build
+        # is only useful if it produced a `manylinux_*` tag. Check before
+        # celebrating a green run.
+        run: |
+          shopt -s nullglob
+          wheels=(docker/*.whl)
+          if [ ${#wheels[@]} -eq 0 ]; then
+            echo "::error::no wheel was produced"
+            exit 1
+          fi
+          for w in "${wheels[@]}"; do
+            echo "=== $w"
+            ls -lh "$w"
+            unzip -p "$w" '*/WHEEL'
+            case "$(basename "$w")" in
+              *manylinux*aarch64*) echo "tag OK" ;;
+              *) echo "::warning::not a manylinux aarch64 wheel — needs auditwheel repair" ;;
+            esac
+          done
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ inputs.target }}
+          path: docker/*.whl
+          if-no-files-found: error
