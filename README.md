@@ -36,33 +36,41 @@ versions under a single distribution name, which resolvers handle badly.
 - **Not official.** Unaffiliated with Intel or the Open3D maintainers. Open3D is
   MIT licensed; these are unmodified builds of their source.
 
-## Status
-
-Wheels are published to
-[Releases](https://github.com/augustelalande/open3d-wheels/releases). The build
-workflow is manual — dispatch it with a ref and a set of Python versions.
-
-The PEP 503 index on GitHub Pages is not up yet, so installs are by URL for now.
-
 ## Usage
 
-Take the URL of the wheel matching your Python from the
-[latest release](https://github.com/augustelalande/open3d-wheels/releases/latest):
-
-```bash
-pip install https://github.com/augustelalande/open3d-wheels/releases/download/v0.19.0-aab533f/open3d-0.19.0-cp312-cp312-manylinux_2_35_aarch64.whl
-```
-
-Requires **glibc >= 2.35** (JetPack 6 / Ubuntu 22.04; not JetPack 5).
-
-Once the index is up it will be served from GitHub Pages, and the distribution
-keeps its upstream name so nothing else has to change:
+The distribution keeps its upstream name, `open3d`, so only the index has to be
+added. With uv:
 
 ```toml
 [[tool.uv.index]]
 name = "open3d-wheels"
 url = "https://augustelalande.github.io/open3d-wheels/simple/"
 ```
+
+With pip:
+
+```bash
+pip install --extra-index-url https://augustelalande.github.io/open3d-wheels/simple/ open3d
+```
+
+Requires **glibc >= 2.35** (JetPack 6 / Ubuntu 22.04 — not JetPack 5, which is
+glibc 2.31). Every link in the index carries a `sha256` fragment, so downloads
+are verified.
+
+Individual wheels can also be installed straight from
+[Releases](https://github.com/augustelalande/open3d-wheels/releases/latest) by
+URL.
+
+## Status
+
+Wheels for CPython 3.10–3.14 are published. Both workflows are manual:
+`build.yml` takes an Open3D ref and a set of Python versions, and `pages.yml`
+regenerates the index — which it also does automatically whenever a release
+changes.
+
+The index links to the release assets rather than hosting them. Pages allows a
+1 GB site and a soft 100 GB/month of bandwidth, and one release of these wheels
+is already ~235 MB.
 
 ## Build environment
 
