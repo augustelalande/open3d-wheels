@@ -11,6 +11,9 @@ on:
       pythons:
         description: JSON array of docker_build.sh python tags
         default: '["py310","py311","py312","py313","py314"]'
+      platforms:
+        description: JSON array of architectures — arm64, amd64
+        default: '["arm64","amd64"]'
 
 jobs:
   build:
@@ -20,8 +23,11 @@ jobs:
       fail-fast: false
       matrix:
         python: ${{ fromJSON(inputs.pythons) }}
+        platform: ${{ fromJSON(inputs.platforms) }}
 
-    runs-on: ubuntu-24.04-arm
+    # Both are OpenBLAS targets, so both are CPU-only — there is no CUDA in
+    # either, on any architecture.
+    runs-on: ${{ matrix.platform == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 350
 
     steps:
@@ -67,19 +73,17 @@ jobs:
       - name: Build
         run: |
           cd docker
-          ./docker_build.sh "openblas-arm64-${{ matrix.python }}"
+          ./docker_build.sh "openblas-${{ matrix.platform }}-${{ matrix.python }}"
 
       - name: Inspect the wheel
-        # Upstream runs no auditwheel, so expect a bare `linux_aarch64` tag.
-        # That is fine when self-hosting: `linux_<arch>` is the last entry pip
-        # yields in its own supported-tag list, so it installs. PyPI refuses to
-        # *host* such wheels; pip does not refuse to install them.
+        # Upstream runs no auditwheel. Its setup.py instead reads the *build
+        # container's* glibc and rewrites the `linux_*` tag to a matching
+        # `manylinux_X_Y_*`, so the tag is self-asserted rather than audited.
+        # Both base images are Ubuntu 22.04, which makes that claim 2.35.
         #
-        # glibc is the real portability limit. The base image is
-        # arm64v8/ubuntu:22.04, so these need glibc >= 2.35 — fine on JetPack 6
-        # (Ubuntu 22.04), too new for JetPack 5 (Ubuntu 20.04, glibc 2.31).
-        # Report the floor the binaries actually ask for rather than inferring
-        # it from the base image.
+        # glibc is the real portability limit — JetPack 6 / Ubuntu 22.04 clears
+        # 2.35, JetPack 5 / Ubuntu 20.04 (2.31) does not. Since the tag is only
+        # an assertion, report the floor the binaries actually ask for.
         run: |
           shopt -s nullglob
           wheels=(docker/*.whl)
@@ -103,6 +107,6 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.python }}
+          name: wheel-${{ matrix.platform }}-${{ matrix.python }}
           path: docker/*.whl
           if-no-files-found: error
